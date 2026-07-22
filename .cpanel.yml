@@ -16,6 +16,6 @@ deployment:
   tasks:
     - export DEPLOYPATH=$PWD
     # Placeholder - replace with the "source /home/<user>/nodevenv/<app>/<version>/bin/activate" line from your cPanel Node.js App screen:
-    - source /home/REPLACE_ME/nodevenv/REPLACE_ME/20/bin/activate
+    - source /home/xc7syadvfzmx/nodevenv/repositories/Bitrix-automation/10/bin/activate && cd /home/xc7syadvfzmx/repositories/Bitrix-automation
     - npm install --production=false
     - npm run build

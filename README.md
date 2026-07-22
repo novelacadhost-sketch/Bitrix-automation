@@ -164,8 +164,7 @@ Use a dedicated subdomain rather than a subpath of your main site - e.g. `mcp.no
 Go back to your `.env` (and update it again on the server in step 7.4) and set:
 
 ```
-MCP_SERVER_URL=https://mcp.novelsolar.com
-```
+
 
 No trailing slash.
 
