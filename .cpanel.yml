@@ -1,0 +1,21 @@
+# Used by cPanel's "Git Version Control" feature. When you click
+# "Pull or Deploy" (or push to the repo cPanel is watching), cPanel runs
+# the shell commands below from the root of the checked-out repository.
+#
+# IMPORTANT: cPanel's Node.js Selector needs its own special node/npm on
+# your PATH. The exact activation command depends on your account and the
+# Node version you pick in "Setup Node.js App" - cPanel shows the correct
+# line for your app under the app's "Application URL" screen as a button
+# labelled something like "Run NPM Install". If the commands below fail
+# because `npm` is "not found", open that screen, copy the "source ..."
+# command it shows you, and replace the placeholder line marked below.
+# This is the one step in the whole deployment that is genuinely fiddly -
+# see the README's "cPanel deployment" section for a walkthrough.
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=$PWD
+    # Placeholder - replace with the "source /home/<user>/nodevenv/<app>/<version>/bin/activate" line from your cPanel Node.js App screen:
+    - source /home/REPLACE_ME/nodevenv/REPLACE_ME/20/bin/activate
+    - npm install --production=false
+    - npm run build
