@@ -240,7 +240,7 @@ Once connected, ask Claude something like:
 
 This calls `bitrix_list_deals` - a read-only tool - and is a safe first check that the whole chain (Claude → OAuth token → your server → Bitrix24 webhook) works. If it returns real deals from your portal, everything is wired up correctly.
 
----
+
 
 ## 10. Rotating or revoking access
 
