@@ -57,7 +57,8 @@
       "Bash(powershell -Command 'Get-NetTCPConnection -LocalPort 3999 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }')",
       "Bash(rm -rf data dist)",
       "Bash(rm -rf /tmp/mcp-iso /tmp/mcp-live-test*.log)",
-      "Bash(ls -la \"/c/Users/Novel/.claude/projects/C--Users-Novel-Downloads-Bitrix-automation/memory/\" 2>&1)"
+      "Bash(ls -la \"/c/Users/Novel/.claude/projects/C--Users-Novel-Downloads-Bitrix-automation/memory/\" 2>&1)",
+      "Bash(rm -rf dist)"
     ]
   }
 }
