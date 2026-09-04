@@ -6,6 +6,7 @@ import { registerTaskTools } from './tools/tasks.js';
 import { registerAnalyticsTools } from './tools/analytics.js';
 import { registerBizprocTools } from './tools/bizproc.js';
 import { registerEmployeeTools } from './tools/employees.js';
+import { registerInventoryTools } from './tools/inventory.js';
 
 // Builds a fresh McpServer with every Bitrix24 tool registered. Called once
 // per incoming request (see index.ts) since this server runs in stateless
@@ -23,6 +24,7 @@ export function buildMcpServer(bitrix: BitrixClient): McpServer {
     registerAnalyticsTools(server, bitrix);
     registerBizprocTools(server, bitrix);
     registerEmployeeTools(server, bitrix);
+    registerInventoryTools(server, bitrix);
 
     return server;
 }
