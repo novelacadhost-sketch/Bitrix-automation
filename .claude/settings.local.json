@@ -121,7 +121,8 @@
       "mcp__9b500f81-9c26-4a42-ab05-5434d16688a3__bitrix_list_store_products",
       "Bash(curl -s -X POST http://localhost:3999/mcp -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":1}')",
       "Bash(curl -s --max-time 60 -X POST http://localhost:3999/mcp -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"id\":2,\"params\":{\"name\":\"bitrix_trace_product_movement\",\"arguments\":{\"productId\":19988,\"storeId\":54}}}')",
-      "Bash(curl -s --max-time 90 -X POST http://localhost:3999/mcp -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"id\":3,\"params\":{\"name\":\"bitrix_trace_product_movement\",\"arguments\":{\"productId\":19988}}}')"
+      "Bash(curl -s --max-time 90 -X POST http://localhost:3999/mcp -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"id\":3,\"params\":{\"name\":\"bitrix_trace_product_movement\",\"arguments\":{\"productId\":19988}}}')",
+      "Bash(curl -s -i --max-time 20 -X POST https://bitrix-automation-production.up.railway.app/register -H 'Content-Type: application/json' -d '{\"redirect_uris\":[\"https://claude.ai/api/mcp/auth_callback\"],\"client_name\":\"post-inventory-deploy-check\",\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"response_types\":[\"code\"],\"token_endpoint_auth_method\":\"none\"}')"
     ]
   }
 }
