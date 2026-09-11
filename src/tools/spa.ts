@@ -50,12 +50,37 @@ export function registerSpaTools(server: McpServer, bitrix: BitrixClient): void 
         'bitrix_get_spa_type',
         {
             description:
-                'Get one SPA entity type by entityTypeId, including which optional features are switched on - ' +
-                'client binding, product rows, stages, automation (crm.type.get). Read-only. Worth checking that ' +
-                'isClientEnabled / isLinkWithProductsEnabled are actually set before building anything that relies on them.',
-            inputSchema: { entityTypeId: z.number().int().describe('The SPA entity type ID.') }
+                'Get one SPA entity type by its type id, including which optional features are switched on - ' +
+                'client binding, product rows, stages, automation (crm.type.get). Read-only. ' +
+                'IMPORTANT: every crm.type.* method takes the type\'s own `id` (a small number like 100), NOT the ' +
+                '`entityTypeId` (a number like 1222) that crm.item.* and crm.category.* take. The same object has ' +
+                'both, and passing the wrong one returns "Smart Process Automation was not found", which reads ' +
+                'like the type does not exist rather than like a wrong-identifier error. Get both from bitrix_list_spa_types.',
+            inputSchema: {
+                id: z.number().int().describe('The type id from bitrix_list_spa_types (its `id`, e.g. 100 - not its entityTypeId).')
+            }
         },
-        async ({ entityTypeId }) => jsonResult(await bitrix.call('crm.type.get', { id: entityTypeId }))
+        async ({ id }) => jsonResult(await bitrix.call('crm.type.get', { id }))
+    );
+
+    server.registerTool(
+        'bitrix_update_spa_type',
+        {
+            description:
+                'WRITE ACTION - SCHEMA CHANGE: updates an existing SPA entity type (crm.type.update) - its title, ' +
+                'custom section, feature flags or parent/child relations. Takes the type\'s own `id`, not its ' +
+                'entityTypeId (see bitrix_get_spa_type). Renaming is safe and reversible. Turning a feature flag ' +
+                'OFF is not equally safe: existing records keep data in the disabled area but stop showing it, so ' +
+                'switch flags off only deliberately. Requires confirm:true.',
+            inputSchema: {
+                id: z.number().int().describe('The type id (e.g. 100), not the entityTypeId.'),
+                fields: z
+                    .record(z.string(), z.any())
+                    .describe('Only the properties to change, e.g. {"title":"Legacy Deals"}'),
+                confirm: z.literal(true).describe('Must be exactly true. Confirms you intend to modify a live entity type.')
+            }
+        },
+        async ({ id, fields }) => jsonResult({ updated: true, type: await bitrix.call('crm.type.update', { id, fields }) })
     );
 
     server.registerTool(
@@ -152,6 +177,42 @@ export function registerSpaTools(server: McpServer, bitrix: BitrixClient): void 
             }
         },
         async ({ fields }) => jsonResult({ created: true, id: await bitrix.call('crm.status.add', { fields }) })
+    );
+
+    server.registerTool(
+        'bitrix_update_stage',
+        {
+            description:
+                'WRITE ACTION - SCHEMA CHANGE: updates one stage of a CRM pipeline (crm.status.update). Takes the ' +
+                'stage\'s numeric ID from bitrix_list_stages (the `ID` field, e.g. 1266 - not its STATUS_ID string). ' +
+                'Renaming a stage is safe: records already sitting in it keep their STATUS_ID and simply display ' +
+                'the new name. Changing SEMANTICS is not cosmetic - it reclassifies every record in that stage as ' +
+                'won/lost/in-progress and rewrites your funnel reporting retroactively. Requires confirm:true.',
+            inputSchema: {
+                id: z.number().int().describe('Numeric stage ID from bitrix_list_stages, e.g. 1266.'),
+                fields: z.record(z.string(), z.any()).describe('Only the properties to change, e.g. {"NAME":"To Contact"}'),
+                confirm: z.literal(true).describe('Must be exactly true. Confirms you intend to modify a live pipeline stage.')
+            }
+        },
+        async ({ id, fields }) => jsonResult({ updated: await bitrix.call('crm.status.update', { id, fields }), id })
+    );
+
+    server.registerTool(
+        'bitrix_delete_stage',
+        {
+            description:
+                'WRITE ACTION - SCHEMA CHANGE, DESTRUCTIVE: deletes a stage from a CRM pipeline (crm.status.delete). ' +
+                'Records currently in that stage are NOT deleted, but they are left pointing at a STATUS_ID that no ' +
+                'longer exists, which displays as a blank or broken stage until each one is moved - so move records ' +
+                'out first and delete the stage second. System stages (SYSTEM:"Y" in bitrix_list_stages, typically ' +
+                'the first stage plus the success and failure stages) cannot be deleted at all - rename those ' +
+                'instead with bitrix_update_stage. Requires confirm:true.',
+            inputSchema: {
+                id: z.number().int().describe('Numeric stage ID from bitrix_list_stages.'),
+                confirm: z.literal(true).describe('Must be exactly true. Confirms you intend to delete a live pipeline stage.')
+            }
+        },
+        async ({ id }) => jsonResult({ deleted: await bitrix.call('crm.status.delete', { id }), id })
     );
 
     server.registerTool(
