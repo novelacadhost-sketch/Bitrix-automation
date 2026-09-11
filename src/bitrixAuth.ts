@@ -95,6 +95,41 @@ export class AppTransport implements BitrixTransport {
         return Boolean(this.store.get('refreshToken'));
     }
 
+    /**
+     * Where an admin goes to authorise this app. Deliberately omits
+     * redirect_uri: Bitrix24 then sends the code back to the handler path
+     * registered on the app itself, which avoids having to keep a second
+     * copy of that URL in sync (and ours carries a query string, which
+     * redirect_uri matching is fussy about).
+     */
+    authorizeUrl(): string {
+        return (
+            `https://${this.portal}/oauth/authorize/` +
+            `?client_id=${encodeURIComponent(this.clientId)}&response_type=code`
+        );
+    }
+
+    /**
+     * Trades an authorization code for a token pair. This is the escape
+     * hatch when a local app's install hook never fires - it depends only
+     * on a person visiting a URL and approving, not on Bitrix24 choosing to
+     * call our install path.
+     */
+    async exchangeAuthorizationCode(code: string): Promise<void> {
+        const url =
+            `${OAUTH_TOKEN_URL}?grant_type=authorization_code` +
+            `&client_id=${encodeURIComponent(this.clientId)}` +
+            `&client_secret=${encodeURIComponent(this.clientSecret)}` +
+            `&code=${encodeURIComponent(code)}`;
+        const response = await fetch(url);
+        const body: any = await response.json().catch(() => null);
+        if (!body || typeof body.access_token !== 'string' || typeof body.refresh_token !== 'string') {
+            const detail = body?.error_description || body?.error || `HTTP ${response.status}`;
+            throw new Error(`Bitrix24 authorization-code exchange failed: ${detail}`);
+        }
+        this.acceptInstallTokens(body.access_token, body.refresh_token, Number(body.expires_in) || 3600);
+    }
+
     async endpoint(method: string): Promise<string> {
         const token = await this.accessToken();
         return `https://${this.portal}/rest/${method}.json?auth=${encodeURIComponent(token)}`;

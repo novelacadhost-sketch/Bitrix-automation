@@ -55,6 +55,25 @@ app.post('/login', (req, res) => {
     });
 });
 
+// Starts the OAuth authorisation flow. An admin opens this once; Bitrix24
+// sends them back to the app's registered handler path with a ?code=, which
+// the handler below exchanges for a token pair. Used when the local app's
+// install hook never fires, which is the common case for an app that is
+// already installed.
+app.get('/bitrix/connect', (req: Request, res: Response) => {
+    const expected = config.bitrixInstallSecret;
+    const provided = typeof req.query.secret === 'string' ? req.query.secret : '';
+    if (!expected || provided !== expected) {
+        res.status(404).send('Not found.');
+        return;
+    }
+    if (!(bitrixTransport instanceof AppTransport)) {
+        res.status(409).send('Server is running in webhook mode. Set BITRIX24_AUTH_MODE=app and redeploy first.');
+        return;
+    }
+    res.redirect(bitrixTransport.authorizeUrl());
+});
+
 // Bitrix24 local-application install handler.
 //
 // When a Server-type local app is installed or reinstalled, Bitrix24 POSTs
@@ -101,6 +120,23 @@ app.all('/bitrix/install', (req: Request, res: Response) => {
         const fromQuery = query[name];
         return typeof fromQuery === 'string' && fromQuery ? fromQuery : '';
     };
+    // Authorisation-code return leg. Checked before the install fields
+    // because a code is the more reliable of the two paths.
+    const code = pick('code');
+    if (code) {
+        bitrixTransport
+            .exchangeAuthorizationCode(code)
+            .then(() => {
+                console.log('Bitrix24 authorisation code exchanged - token pair stored.');
+                res.status(200).send('<html><body><h3>Connected.</h3><p>Tokens stored. You can close this window.</p></body></html>');
+            })
+            .catch((err: Error) => {
+                console.error('Bitrix24 code exchange failed:', err.message);
+                res.status(400).send(`Could not complete authorisation: ${err.message}`);
+            });
+        return;
+    }
+
     const accessToken = pick('AUTH_ID');
     const refreshToken = pick('REFRESH_ID');
     const expiresIn = Number(pick('AUTH_EXPIRES')) || 3600;
