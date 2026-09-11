@@ -11,6 +11,8 @@
 //    anyway, we retry with exponential backoff instead of failing the tool
 //    call outright.
 
+import type { BitrixTransport } from './bitrixAuth.js';
+
 const MIN_INTERVAL_MS = 550; // a little under 2 req/sec, on purpose
 const MAX_RETRIES = 5;
 const BASE_BACKOFF_MS = 600;
@@ -34,7 +36,7 @@ interface BitrixRawBody {
 export class BitrixClient {
     private nextRequestAt = 0;
 
-    constructor(private readonly webhookUrl: string) {}
+    constructor(private readonly transport: BitrixTransport) {}
 
     /** Calls a non-list Bitrix24 REST method and returns its `result` field. */
     async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -77,12 +79,22 @@ export class BitrixClient {
 
     private async callWithRetry(method: string, params: Record<string, unknown>): Promise<BitrixRawBody> {
         let attempt = 0;
+        let authRetried = false;
         for (;;) {
             await this.waitForSlot();
             try {
                 return await this.doCall(method, params);
             } catch (err) {
                 const isRateLimit = err instanceof BitrixApiError && err.code === 'QUERY_LIMIT_EXCEEDED';
+                // An expired OAuth access token looks like a hard failure but
+                // is recoverable: the transport refreshes and we retry once.
+                // Webhook transport always declines, so this is a no-op there.
+                if (err instanceof BitrixApiError && !isRateLimit && !authRetried) {
+                    authRetried = true;
+                    if (await this.transport.handleAuthError(err.code)) {
+                        continue;
+                    }
+                }
                 const isTransient = isRateLimit || err instanceof TypeError; // TypeError == fetch/network failure
                 attempt++;
                 if (!isTransient || attempt > MAX_RETRIES) {
@@ -104,7 +116,7 @@ export class BitrixClient {
     }
 
     private async doCall(method: string, params: Record<string, unknown>): Promise<BitrixRawBody> {
-        const url = `${this.webhookUrl}${method}.json`;
+        const url = await this.transport.endpoint(method);
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

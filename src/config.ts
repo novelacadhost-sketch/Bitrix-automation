@@ -13,13 +13,37 @@ function required(name: string): string {
     return value.trim();
 }
 
-const bitrixWebhookUrl = required('BITRIX24_WEBHOOK_URL');
-if (!/^https:\/\/[^/]+\/rest\/\d+\/[^/]+\/?$/.test(bitrixWebhookUrl)) {
+function optional(name: string): string | undefined {
+    const value = process.env[name];
+    return value && value.trim() !== '' ? value.trim() : undefined;
+}
+
+// Which credential the Bitrix24 calls use. Defaults to 'webhook' so an
+// existing deployment keeps working untouched. Set BITRIX24_AUTH_MODE=app
+// to switch, and back again if something regresses - the two are
+// independent, so flipping is a one-variable rollback rather than a
+// redeploy of different code.
+const bitrixAuthMode = (optional('BITRIX24_AUTH_MODE') ?? 'webhook').toLowerCase();
+if (bitrixAuthMode !== 'webhook' && bitrixAuthMode !== 'app') {
+    throw new Error('BITRIX24_AUTH_MODE must be either "webhook" or "app".');
+}
+
+const bitrixWebhookUrl = bitrixAuthMode === 'webhook' ? required('BITRIX24_WEBHOOK_URL') : optional('BITRIX24_WEBHOOK_URL');
+if (bitrixWebhookUrl && !/^https:\/\/[^/]+\/rest\/\d+\/[^/]+\/?$/.test(bitrixWebhookUrl)) {
     throw new Error(
         'BITRIX24_WEBHOOK_URL does not look like a Bitrix24 inbound webhook URL ' +
             '(expected format: https://<portal>/rest/<user id>/<token>/).'
     );
 }
+
+// Local-application credentials. Only required in app mode. The refresh
+// token here is a SEED: once the server has refreshed once it stores the
+// rotated token and ignores this value, because Bitrix24 invalidates a
+// refresh token as soon as it is used.
+const bitrixPortal = bitrixAuthMode === 'app' ? required('BITRIX24_PORTAL').replace(/^https?:\/\//, '').replace(/\/$/, '') : undefined;
+const bitrixClientId = bitrixAuthMode === 'app' ? required('BITRIX24_CLIENT_ID') : undefined;
+const bitrixClientSecret = bitrixAuthMode === 'app' ? required('BITRIX24_CLIENT_SECRET') : undefined;
+const bitrixRefreshToken = bitrixAuthMode === 'app' ? required('BITRIX24_REFRESH_TOKEN') : undefined;
 
 const rawServerUrl = required('MCP_SERVER_URL');
 const serverUrl = new URL(rawServerUrl);
@@ -33,7 +57,12 @@ if (loginPassphrase.length < 12) {
 }
 
 export const config = {
-    bitrixWebhookUrl: bitrixWebhookUrl.endsWith('/') ? bitrixWebhookUrl : `${bitrixWebhookUrl}/`,
+    bitrixAuthMode: bitrixAuthMode as 'webhook' | 'app',
+    bitrixWebhookUrl: bitrixWebhookUrl ? (bitrixWebhookUrl.endsWith('/') ? bitrixWebhookUrl : `${bitrixWebhookUrl}/`) : undefined,
+    bitrixPortal,
+    bitrixClientId,
+    bitrixClientSecret,
+    bitrixRefreshToken,
     serverUrl,
     mcpResourceUrl: new URL('/mcp', serverUrl),
     loginPassphrase,

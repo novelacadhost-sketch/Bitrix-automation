@@ -4,6 +4,7 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelconte
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { config } from './config.js';
 import { BitrixClient } from './bitrixClient.js';
+import { AppTransport, WebhookTransport } from './bitrixAuth.js';
 import { buildMcpServer } from './mcpServer.js';
 import { BitrixMcpOAuthProvider } from './oauthProvider.js';
 
@@ -18,7 +19,18 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // needed for the OAuth token endpoint and our /login form
 
-const bitrix = new BitrixClient(config.bitrixWebhookUrl);
+const bitrixTransport =
+    config.bitrixAuthMode === 'app'
+        ? new AppTransport(
+              config.bitrixPortal!,
+              config.bitrixClientId!,
+              config.bitrixClientSecret!,
+              config.bitrixRefreshToken!,
+              config.dataDir
+          )
+        : new WebhookTransport(config.bitrixWebhookUrl!);
+const bitrix = new BitrixClient(bitrixTransport);
+console.log(`Bitrix24 auth mode: ${config.bitrixAuthMode}`);
 const oauthProvider = new BitrixMcpOAuthProvider(config.dataDir);
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(config.mcpResourceUrl);
 
