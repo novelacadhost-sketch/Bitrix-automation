@@ -97,7 +97,8 @@ export function registerCrmTools(server: McpServer, bitrix: BitrixClient): void 
                     select: select ?? ['*'],
                     order: order ?? { id: 'DESC' }
                 },
-                clampLimit(limit)
+                clampLimit(limit),
+                'items'
             );
             return jsonResult({ total, returned: items.length, items });
         }
