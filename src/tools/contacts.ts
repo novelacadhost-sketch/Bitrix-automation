@@ -22,6 +22,13 @@ const NG_NATIONAL_LENGTH = 10; // e.g. 8057020209, the part after the 0 or +234
  * Reduces a Nigerian number to its 10-digit national significant number,
  * or returns null if it does not look like one. Accepts +234…, 234…, 0…,
  * and bare 10-digit forms, ignoring spaces, dashes and parentheses.
+ *
+ * It also repairs the country-code-plus-trunk-zero malformation: this
+ * portal stores numbers like "+23408033512189", which is +234 followed by
+ * the full national form *including* its leading 0, giving 14 digits
+ * instead of 13. Observed on real contact records (id 4886), not
+ * hypothetical. Without stripping that stray zero the number reduces to
+ * nothing and dedup silently falls back to exact string matching.
  */
 export function toNgNationalNumber(raw: string): string | null {
     const digits = raw.replace(/[^\d+]/g, '');
@@ -30,14 +37,33 @@ export function toNgNationalNumber(raw: string): string | null {
     else if (digits.startsWith('234')) rest = digits.slice(3);
     else if (digits.startsWith('0')) rest = digits.slice(1);
     else rest = digits.replace(/^\+/, '');
+    // Country code followed by the trunk zero: "+234" + "08033512189".
+    if (rest.length === NG_NATIONAL_LENGTH + 1 && rest.startsWith('0')) {
+        rest = rest.slice(1);
+    }
     return rest.length === NG_NATIONAL_LENGTH ? rest : null;
 }
 
-/** Every stored form one Nigerian number might plausibly appear as. */
+/**
+ * Every stored form one Nigerian number might plausibly appear as,
+ * including the two malformed country-code-plus-zero shapes. Both
+ * directions matter: a correctly formatted import row has to find a
+ * malformed stored contact, and a malformed import row has to find a
+ * correctly stored one. Omitting the malformed probes produces a false
+ * "no duplicate", which is the expensive direction to get wrong - it
+ * creates a second contact for someone already in the CRM.
+ */
 export function ngPhoneVariants(raw: string): string[] {
     const national = toNgNationalNumber(raw);
     if (!national) return [raw];
-    return [`+234${national}`, `234${national}`, `0${national}`, national];
+    return [
+        `+234${national}`,
+        `234${national}`,
+        `0${national}`,
+        national,
+        `+2340${national}`,
+        `2340${national}`
+    ];
 }
 
 export function registerContactTools(server: McpServer, bitrix: BitrixClient): void {

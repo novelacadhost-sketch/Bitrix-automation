@@ -9,6 +9,7 @@ import { registerEmployeeTools } from './tools/employees.js';
 import { registerInventoryTools } from './tools/inventory.js';
 import { registerSpaTools } from './tools/spa.js';
 import { registerContactTools } from './tools/contacts.js';
+import { registerListTools } from './tools/lists.js';
 
 // Builds a fresh McpServer with every Bitrix24 tool registered. Called once
 // per incoming request (see index.ts) since this server runs in stateless
@@ -29,6 +30,7 @@ export function buildMcpServer(bitrix: BitrixClient): McpServer {
     registerInventoryTools(server, bitrix);
     registerSpaTools(server, bitrix);
     registerContactTools(server, bitrix);
+    registerListTools(server, bitrix);
 
     return server;
 }
