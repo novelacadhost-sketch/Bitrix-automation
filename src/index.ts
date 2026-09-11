@@ -85,9 +85,25 @@ app.all('/bitrix/install', (req: Request, res: Response) => {
     }
 
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const accessToken = typeof body.AUTH_ID === 'string' ? body.AUTH_ID : '';
-    const refreshToken = typeof body.REFRESH_ID === 'string' ? body.REFRESH_ID : '';
-    const expiresIn = Number(body.AUTH_EXPIRES) || 3600;
+    const query = (req.query ?? {}) as Record<string, unknown>;
+    // Log field NAMES only, never values - this is how we tell "Bitrix24
+    // never called us" apart from "Bitrix24 called us with fields we did
+    // not expect", which look identical from the outside.
+    console.log(
+        `Bitrix24 install handler: method=${req.method} bodyKeys=[${Object.keys(body).join(',')}] queryKeys=[${Object.keys(query).join(',')}]`
+    );
+
+    // Bitrix24 sends these in the POST body on install, but some flows put
+    // them in the query string instead, so accept either.
+    const pick = (name: string): string => {
+        const fromBody = body[name];
+        if (typeof fromBody === 'string' && fromBody) return fromBody;
+        const fromQuery = query[name];
+        return typeof fromQuery === 'string' && fromQuery ? fromQuery : '';
+    };
+    const accessToken = pick('AUTH_ID');
+    const refreshToken = pick('REFRESH_ID');
+    const expiresIn = Number(pick('AUTH_EXPIRES')) || 3600;
 
     if (!accessToken || !refreshToken) {
         // A GET from a browser lands here too - that is the normal way to
@@ -102,7 +118,17 @@ app.all('/bitrix/install', (req: Request, res: Response) => {
     bitrixTransport.acceptInstallTokens(accessToken, refreshToken, expiresIn);
     // Never log the tokens themselves.
     console.log('Bitrix24 local application installed - token pair stored.');
-    res.status(200).send('<html><body><h3>Connected.</h3><p>You can close this window.</p></body></html>');
+    // Calling installFinish() matters when the app is configured with
+    // "Application completes the installation itself" ticked: without it
+    // Bitrix24 waits forever on the install screen. Wrapped in a guard so
+    // the same page still renders fine when opened directly in a browser,
+    // where BX24 does not exist.
+    res.status(200).send(
+        '<html><head><script src="//api.bitrix24.com/api/v1/"></script></head>' +
+            '<body><h3>Connected.</h3><p>Tokens stored. You can close this window.</p>' +
+            '<script>try{if(typeof BX24!=="undefined"){BX24.init(function(){BX24.installFinish();});}}catch(e){}</script>' +
+            '</body></html>'
+    );
 });
 
 // The actual MCP endpoint. Every request gets a brand-new McpServer and
