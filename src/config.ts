@@ -43,7 +43,14 @@ if (bitrixWebhookUrl && !/^https:\/\/[^/]+\/rest\/\d+\/[^/]+\/?$/.test(bitrixWeb
 const bitrixPortal = bitrixAuthMode === 'app' ? required('BITRIX24_PORTAL').replace(/^https?:\/\//, '').replace(/\/$/, '') : undefined;
 const bitrixClientId = bitrixAuthMode === 'app' ? required('BITRIX24_CLIENT_ID') : undefined;
 const bitrixClientSecret = bitrixAuthMode === 'app' ? required('BITRIX24_CLIENT_SECRET') : undefined;
-const bitrixRefreshToken = bitrixAuthMode === 'app' ? required('BITRIX24_REFRESH_TOKEN') : undefined;
+// Optional. Normally the tokens arrive at the install handler instead, so
+// this only exists as a manual fallback.
+const bitrixRefreshToken = optional('BITRIX24_REFRESH_TOKEN');
+
+// Guards the install handler. Bitrix24 POSTs live tokens to that URL, so it
+// must not be callable by anyone who happens to guess the path - without
+// this set, the endpoint refuses every request.
+const bitrixInstallSecret = optional('BITRIX24_INSTALL_SECRET');
 
 const rawServerUrl = required('MCP_SERVER_URL');
 const serverUrl = new URL(rawServerUrl);
@@ -63,6 +70,7 @@ export const config = {
     bitrixClientId,
     bitrixClientSecret,
     bitrixRefreshToken,
+    bitrixInstallSecret,
     serverUrl,
     mcpResourceUrl: new URL('/mcp', serverUrl),
     loginPassphrase,

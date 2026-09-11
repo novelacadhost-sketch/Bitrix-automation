@@ -55,6 +55,56 @@ app.post('/login', (req, res) => {
     });
 });
 
+// Bitrix24 local-application install handler.
+//
+// When a Server-type local app is installed or reinstalled, Bitrix24 POSTs
+// a fresh token pair here (AUTH_ID / REFRESH_ID). Capturing them server-side
+// means a refresh token never has to travel through a config file, a chat
+// window or a clipboard - and "reinstall the app in Bitrix24" becomes the
+// recovery procedure if the stored token is ever lost or revoked.
+//
+// Guarded by a shared secret in the query string, because this endpoint
+// accepts credentials: anyone who could POST here could otherwise swap the
+// server's Bitrix24 identity for one they control. With no secret
+// configured the endpoint stays closed.
+app.all('/bitrix/install', (req: Request, res: Response) => {
+    const expected = config.bitrixInstallSecret;
+    if (!expected) {
+        res.status(404).send('Install handler is disabled. Set BITRIX24_INSTALL_SECRET to enable it.');
+        return;
+    }
+    const provided = typeof req.query.secret === 'string' ? req.query.secret : '';
+    if (provided !== expected) {
+        // Deliberately vague - do not confirm whether the path is right.
+        res.status(404).send('Not found.');
+        return;
+    }
+    if (!(bitrixTransport instanceof AppTransport)) {
+        res.status(409).send('Server is running in webhook mode. Set BITRIX24_AUTH_MODE=app and redeploy first.');
+        return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const accessToken = typeof body.AUTH_ID === 'string' ? body.AUTH_ID : '';
+    const refreshToken = typeof body.REFRESH_ID === 'string' ? body.REFRESH_ID : '';
+    const expiresIn = Number(body.AUTH_EXPIRES) || 3600;
+
+    if (!accessToken || !refreshToken) {
+        // A GET from a browser lands here too - that is the normal way to
+        // check the URL is live before installing, so say so plainly.
+        res.status(200).send(
+            'Install handler is live and the secret is correct. ' +
+                'Now install the local application in Bitrix24 - it will POST its tokens to this URL.'
+        );
+        return;
+    }
+
+    bitrixTransport.acceptInstallTokens(accessToken, refreshToken, expiresIn);
+    // Never log the tokens themselves.
+    console.log('Bitrix24 local application installed - token pair stored.');
+    res.status(200).send('<html><body><h3>Connected.</h3><p>You can close this window.</p></body></html>');
+});
+
 // The actual MCP endpoint. Every request gets a brand-new McpServer and
 // transport (stateless mode) - there is no session kept alive between
 // calls, which keeps this friendly to hosts that idle/recycle the process

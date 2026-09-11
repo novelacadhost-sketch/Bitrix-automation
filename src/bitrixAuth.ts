@@ -65,16 +65,34 @@ export class AppTransport implements BitrixTransport {
         private readonly portal: string,
         private readonly clientId: string,
         private readonly clientSecret: string,
-        seedRefreshToken: string,
+        seedRefreshToken: string | undefined,
         dataDir: string
     ) {
         this.store = new JsonStore<TokenState>('bitrix-oauth.json', {}, dataDir);
         // Seed from the environment only if we have nothing stored. Once a
         // refresh has happened, the stored token is newer than the seed and
         // the seed is dead - overwriting with it would revoke ourselves.
-        if (!this.store.get('refreshToken')) {
+        if (seedRefreshToken && !this.store.get('refreshToken')) {
             this.store.set('refreshToken', seedRefreshToken);
         }
+    }
+
+    /**
+     * Stores the token pair Bitrix24 POSTs to a local application's handler
+     * when the app is installed or reinstalled. This is the preferred way in:
+     * it avoids a refresh token ever being pasted through a config file or a
+     * chat window, and reinstalling the app in Bitrix24 becomes the recovery
+     * path if the stored token is ever lost or revoked.
+     */
+    acceptInstallTokens(accessToken: string, refreshToken: string, expiresInSec: number): void {
+        this.store.set('accessToken', accessToken);
+        this.store.set('refreshToken', refreshToken);
+        this.store.set('expiresAt', Date.now() + (expiresInSec || 3600) * 1000);
+    }
+
+    /** True once we hold a refresh token from any source. */
+    get isAuthorised(): boolean {
+        return Boolean(this.store.get('refreshToken'));
     }
 
     async endpoint(method: string): Promise<string> {
