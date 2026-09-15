@@ -255,12 +255,21 @@ Each of these cost real time. None are documented clearly.
 - **`bizproc.workflow.template.add` cannot be called by a webhook at all** —
   "Access denied! Application context required", regardless of rights. It
   needs a local application's OAuth token. Hence `BITRIX24_AUTH_MODE=app`.
-- **Creating a BP template over REST**, once app auth is in place:
-  `AUTO_EXECUTE` must be a **string** (`"0"`, not `0`), and the field is
-  **`TEMPLATE_DATA`** carrying **base64 of a PHP-serialized array** — not
-  JSON. Even then, a hand-built structure was rejected as "Incorrect
-  workflow template" with no detail. Building in the UI is faster than
-  finishing this.
+- **BP templates cannot be created over REST at all - do not retry this.**
+  With app auth in place the permission wall goes away and you get as far as
+  content validation: `AUTO_EXECUTE` must be a **string** (`"0"`, not `0`),
+  and the field is **`TEMPLATE_DATA`**, which must be a string or you get
+  "Incorrect field TEMPLATE_DATA!". But the payload itself is never
+  accepted. The decisive test: template **536** ("Installation Test") is a
+  real, working template on this portal whose body is just an empty root
+  activity. Reading it back via `bizproc.workflow.template.list`,
+  re-encoding it unchanged and submitting it returns **"Incorrect workflow
+  template"** - as base64 of a PHP-serialized array *and* as base64 of JSON.
+  A byte-faithful copy of a known-good template is refused, so the fault is
+  not in any structure you might build. `.list` renders templates into
+  friendly JSON for output; `.add` expects Bitrix24's internal
+  serialization, which is undocumented and not recoverable from the API.
+  **Build business processes in the workflow designer.**
 - **A local app's install hook may never fire.** Bitrix will not re-run the
   install path for an app it already considers installed, so
   `/bitrix/install` was never called. The reliable route is the
