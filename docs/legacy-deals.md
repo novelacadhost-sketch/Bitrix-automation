@@ -163,9 +163,11 @@ see it, not just here.
 | Repair (2734) | **Service Center** — entityTypeId 1104 |
 | Maintenance (2736) | **Maintenance** — entityTypeId 1058 |
 
-### Template 1 — `Legacy Deals New`
+### Template 1 — `Legacy Deals New` — BUILT (template id 1000)
 
-Document type `DYNAMIC_1222`. `AUTO_EXECUTE` = on add (**1**).
+Document type `DYNAMIC_1222`. Currently `AUTO_EXECUTE` = `"0"` (manual only)
+so it can be tested with bizproc.workflow.start before going live; set it to
+`"1"` (on add) once verified.
 
 Follows the portal's existing convention: every SPA here has a `<Name> New`
 (on add), a `<Name> Update` / `Master Engine (When Changed)` (on change), and
@@ -255,21 +257,27 @@ Each of these cost real time. None are documented clearly.
 - **`bizproc.workflow.template.add` cannot be called by a webhook at all** —
   "Access denied! Application context required", regardless of rights. It
   needs a local application's OAuth token. Hence `BITRIX24_AUTH_MODE=app`.
-- **BP templates cannot be created over REST at all - do not retry this.**
-  With app auth in place the permission wall goes away and you get as far as
-  content validation: `AUTO_EXECUTE` must be a **string** (`"0"`, not `0`),
-  and the field is **`TEMPLATE_DATA`**, which must be a string or you get
-  "Incorrect field TEMPLATE_DATA!". But the payload itself is never
-  accepted. The decisive test: template **536** ("Installation Test") is a
-  real, working template on this portal whose body is just an empty root
-  activity. Reading it back via `bizproc.workflow.template.list`,
-  re-encoding it unchanged and submitting it returns **"Incorrect workflow
-  template"** - as base64 of a PHP-serialized array *and* as base64 of JSON.
-  A byte-faithful copy of a known-good template is refused, so the fault is
-  not in any structure you might build. `.list` renders templates into
-  friendly JSON for output; `.add` expects Bitrix24's internal
-  serialization, which is undocumented and not recoverable from the API.
-  **Build business processes in the workflow designer.**
+- **BP templates CAN be created over REST** - but `TEMPLATE_DATA` is not
+  what `.list` gives you. It is base64 of a PHP-serialized **six-key
+  wrapper**:
+
+  ```
+  { VERSION: 2, TEMPLATE: [...activities...],
+    PARAMETERS, VARIABLES, CONSTANTS, DOCUMENT_FIELDS }
+  ```
+
+  `.list` returns only the inner `TEMPLATE` array, so a template read back
+  from the API is missing the wrapper and cannot be re-submitted - which is
+  why a byte-faithful copy of a working template is rejected with a bare
+  "Incorrect workflow template". Send the wrapper and it succeeds.
+  `DOCUMENT_FIELDS` may be empty. `AUTO_EXECUTE` must be a **string**
+  (`"0"`, not `0`), and app auth is required - a webhook is refused outright
+  with "Application context required".
+
+  The wrapper was recovered from a **.bpt export** (the UI's export button),
+  which is exactly `zlib(php_serialize(wrapper))`. Use
+  `scripts/bp-template.js` to inspect an export or build a payload; if the
+  format ever changes, export any template and run `inspect` on it.
 - **A local app's install hook may never fire.** Bitrix will not re-run the
   install path for an app it already considers installed, so
   `/bitrix/install` was never called. The reliable route is the
