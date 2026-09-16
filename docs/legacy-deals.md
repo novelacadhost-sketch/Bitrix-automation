@@ -45,17 +45,17 @@ the dead ends are modelled separately rather than collapsed into one
 Needed* gets re-touched in a year, *Unreachable* gets tried on another
 channel, *Declined* gets left alone.
 
-| Stage ID | `STATUS_ID` | Semantics | System |
-|---|---|---|---|
-| 1266 | `DT1222_130:NEW` | in progress | **Y** |
-| 1268 | `DT1222_130:PREPARATION` | in progress | N |
-| 1270 | `DT1222_130:CLIENT` | in progress | N |
-| 1276 | `DT1222_130:TRIAGED` | in progress | N |
-| 1272 | `DT1222_130:SUCCESS` | **S** (success) | **Y** |
-| 1274 | `DT1222_130:FAIL` | F | **Y** |
-| 1278 | `DT1222_130:NOACTION` | F | N |
-| 1280 | `DT1222_130:UNREACHABLE` | F | N |
-| 1282 | `DT1222_130:INVALID` | F | N |
+| Stage ID | `STATUS_ID` | Sort | Semantics | System |
+|---|---|---|---|---|
+| 1266 | `DT1222_130:NEW` | 10 | in progress | **Y** |
+| 1268 | `DT1222_130:PREPARATION` | 20 | in progress | N |
+| 1270 | `DT1222_130:CLIENT` | 30 | in progress | N |
+| 1296 | `DT1222_130:TRIAGED` | 35 | in progress | N |
+| 1272 | `DT1222_130:SUCCESS` | 40 | **S** (success) | **Y** |
+| 1298 | `DT1222_130:NOACTION` | 45 | F | N |
+| 1300 | `DT1222_130:UNREACHABLE` | 46 | F | N |
+| 1302 | `DT1222_130:INVALID` | 47 | F | N |
+| 1274 | `DT1222_130:FAIL` | 50 | F | **Y** |
 
 Display names in order: To Contact → Attempting Contact → Call Later →
 Triaged → Routed, then Declined, No Action Needed, Unreachable, Invalid
@@ -257,6 +257,27 @@ Each of these cost real time. None are documented clearly.
 - **`bizproc.workflow.template.add` cannot be called by a webhook at all** —
   "Access denied! Application context required", regardless of rights. It
   needs a local application's OAuth token. Hence `BITRIX24_AUTH_MODE=app`.
+- **`crm.status.add` silently orphans a stage unless you pass `CATEGORY_ID`
+  AND sort it into the right zone.** This cost a day. A stage created
+  without `CATEGORY_ID` gets `0` instead of the pipeline's id. Records still
+  move into it by `crm.item.update`, the kanban still shows it, and
+  filtering by `stageId` still works - so every check short of a business
+  process says it is fine. But **bizproc validates that the target stage
+  belongs to the record's category and refuses silently when it does not**,
+  so `CrmChangeStatusActivity` completes with no error and no stage change.
+  `crm.status.update` accepts `CATEGORY_ID` and returns `updated: true`
+  while ignoring it, so the only repair is delete and re-add.
+
+  Sort order is not cosmetic either, and the two rules conflict:
+  - an in-progress stage must sort **before** the success stage, else the
+    add is refused outright ("Cannot create more stages after the final stage")
+  - a stage with `SEMANTICS: "F"` must sort **after** it, else the add is
+    refused with "Cannot add semantics with the specified sort order"
+
+  So failure stages belong between the success stage and the system FAIL
+  stage (here 45-47, between 40 and 50). Getting this wrong was how the
+  original three failure stages ended up at `CATEGORY_ID: 0`.
+
 - **BP templates CAN be created over REST** - but `TEMPLATE_DATA` is not
   what `.list` gives you. It is base64 of a PHP-serialized **six-key
   wrapper**:
