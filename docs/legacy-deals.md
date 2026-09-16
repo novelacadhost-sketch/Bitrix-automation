@@ -59,7 +59,8 @@ channel, *Declined* gets left alone.
 
 Display names in order: To Contact → Attempting Contact → Call Later →
 Triaged → Routed, then Declined, No Action Needed, Unreachable, Invalid
-Record.
+Record. **No Action Needed currently has nothing routing to it** — see the
+engine section.
 
 ### Custom fields
 
@@ -92,7 +93,6 @@ column.
 | Upgrade | 2732 |
 | Repair | 2734 |
 | Maintenance | 2736 |
-| None | 2752 |
 
 **System Type** — `ufCrm100SystemType`
 
@@ -195,12 +195,25 @@ arrival at Triaged.
 
 | Call result | → Stage |
 |---|---|
-| Reached, services ≠ None | Triaged |
-| Reached, services = None | No Action Needed |
+| Reached | Triaged |
 | No Answer | Call Later |
 | Wrong Number | Invalid Record |
 | Declined | Declined |
 | *otherwise* | Call Later |
+
+**Services Requested is required when the task is answered**, and the `None`
+option was removed from both the field and the templates. That is a
+deliberate decision with a consequence: an agent who reaches someone wanting
+nothing must record it as **Declined**. Declined therefore covers both "not
+interested" and "nothing needed right now", and **No Action Needed has
+nothing routing to it** — it is inert, and should either be deleted from the
+pipeline or repurposed as a hard "do not contact" outcome if that distinction
+is ever wanted.
+
+The earlier design had a second path — Reached with services set to `None` —
+which overlapped Declined without any rule telling an agent which to pick.
+Two stages reachable from the same conversation, chosen by feel, produce two
+lists that mean nothing afterwards. One outcome, one field.
 
 The counter read/use/write-back sits **above** the call task deliberately: the
 workflow parks at that task for days, and a counter updated after it would
