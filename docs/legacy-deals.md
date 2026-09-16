@@ -76,7 +76,13 @@ column.
 | `ufCrm100RecordSource` | enum | |
 | `ufCrm100InstallAddress` | string | |
 | `ufCrm100NextAction` | date | powers Call Later |
-| `ufCrm100Attempts` | integer | should be automation-maintained, not typed |
+| `ufCrm100Attempts` | integer | default **0**; incremented by the BP, never typed |
+| `ufCrm100CallResult` | enum | written by the call task, drives routing |
+| `UF_CRM_100_MAINTENANCE_NEEDED` | enum, multiple | which parts need maintenance |
+| `UF_CRM_100_1789554916` | enum | Deal Type chosen at triage |
+| `UF_CRM_100_REPAIR_CHILD_CREATED` | Y/N | spawn guard |
+| `UF_CRM_100_MAINTENANCE_CHILD_CREATED` | Y/N | spawn guard |
+| `UF_CRM_100_DEAL_CREATED` | Y/N | spawn guard |
 
 **Requested Services** — `ufCrm100ReqServices`
 
@@ -86,6 +92,7 @@ column.
 | Upgrade | 2732 |
 | Repair | 2734 |
 | Maintenance | 2736 |
+| None | 2752 |
 
 **System Type** — `ufCrm100SystemType`
 
@@ -94,16 +101,23 @@ column.
 | Full System (LITHIUM) | 2710 |
 | Full System (TUBULAR) | 2712 |
 | Full System (SMF) | 2714 |
-| `CCTV ` (note trailing space) | 2716 |
+| CCTV | 2716 |
 | Borehole/Pump | 2718 |
 | Floodlights/Streetlights | 2720 |
 | Solar Generators | 2722 |
 | Battery | 2724 |
 | Inverter | 2726 |
 | Panel | 2728 |
+| OTHERS | 2770 |
 
-**Record Source** — `ufCrm100RecordSource`: Paper Invoice 2704 ·
-Spreadsheet 2706 · WhatsApp 2708
+**Record Source** — `ufCrm100RecordSource` (required): Paper Invoice 2704 ·
+Spreadsheet 2706 · WhatsApp 2708 · Enterpriza 2772 · Odoo 2774
+
+**Call Result** — `ufCrm100CallResult`: Reached 2742 · No Answer 2744 ·
+Wrong Number 2746 · Declined 2748 · Call Later 2750
+
+> Purchase Date, System Type and Record Source are all **required**, so any
+> bulk load must supply all three or the row is rejected.
 
 ### Client binding
 
@@ -152,89 +166,114 @@ see it, not just here.
 
 ---
 
-## Still to build
+## The engine — BUILT
 
-### Routing table
+Two templates on `DYNAMIC_1222`, following the portal convention of a
+`<Name> New` plus a master engine.
 
-| Requested Service | Target |
+### Trigger
+
+`Legacy Deals New` (**1006**) runs `AUTO_EXECUTE: "1"` — on record add.
+
+`Legacy Deals Master Engine` (**1008**) is `AUTO_EXECUTE: "0"` on purpose. It
+is started by a **"run workflow" robot on the Triaged stage** rather than by
+on-modify. That matters: on-modify would re-fire the engine every time one of
+its own Set Field steps wrote to the record, re-running every block and
+spawning duplicate children. Firing from a stage-entry robot runs it once per
+arrival at Triaged.
+
+### Template 1006 — `Legacy Deals New`
+
+1. **Set variable** `LDNo` from global variable *Legacy Deal No*
+2. **Modify item** — `TITLE` = `NISL-LD-{=Variable:LDNo}`
+3. **Modify global variable** — `={=Variable:LDNo} + 1`
+4. **Request info** "Call this legacy client" → `CallResult` (required),
+   `ServicesRequested` (multiple)
+5. **Modify item** — writes Call Result, Requested Services, and
+   `={=Document:UF_CRM_100_ATTEMPTS} + 1`
+6. **Condition** on `UF_CRM_100_CALL_RESULT` → six branches
+
+| Call result | → Stage |
 |---|---|
-| New System (2730) | **Deal** — C4 sales pipeline |
-| Upgrade (2732) | **Deal** — C4 sales pipeline |
-| Repair (2734) | **Service Center** — entityTypeId 1104 |
-| Maintenance (2736) | **Maintenance** — entityTypeId 1058 |
+| Reached, services ≠ None | Triaged |
+| Reached, services = None | No Action Needed |
+| No Answer | Call Later |
+| Wrong Number | Invalid Record |
+| Declined | Declined |
+| *otherwise* | Call Later |
 
-### Template 1 — `Legacy Deals New` — BUILT (template id 1000)
+The counter read/use/write-back sits **above** the call task deliberately: the
+workflow parks at that task for days, and a counter updated after it would
+hand every record created in the meantime the same number.
 
-Document type `DYNAMIC_1222`. Currently `AUTO_EXECUTE` = `"0"` (manual only)
-so it can be tested with bizproc.workflow.start before going live; set it to
-`"1"` (on add) once verified.
+### Template 1008 — `Legacy Deals Master Engine`
 
-Follows the portal's existing convention: every SPA here has a `<Name> New`
-(on add), a `<Name> Update` / `Master Engine (When Changed)` (on change), and
-a `<Name> Other Stages` (manual). **Model it on template 448, "Maintenance
-Master Engine (When Changed)"** — it already does this exact shape.
+Outer condition on `STAGE_ID`, three stage branches: **Triaged**, **Call
+Later**, and one on `PREPARATION` (titled "Unreachable", actually an
+escalation: wait 14d → Call Later).
 
-**1. Request Information activity** — "Call Client & Log Call Outcome"
+Inside **Triaged**, three *sibling* Condition blocks — not branches of one:
 
-- Assigned to: `{=Document:ASSIGNED_BY_ID}` — the record's responsible
-  person, so branches call their own customers
-- Show comment: yes, labelled **Notes**
-- Status message: "Waiting for call outcome"
-
-| Task field | Type | Options |
+| Block | Condition | Action |
 |---|---|---|
-| Call Result | select, **required** | Reached · No Answer · Wrong Number · Declined · Call Later |
-| Services Requested | select, **multiple** | New System · Upgrade · Repair · Maintenance |
+| Repair | contain Repair **AND** `REPAIR_CHILD_CREATED` = N | create Service Center (cat 54, `DT1104_54:NEW`) → set flag Y |
+| Maintenance | contain Maintenance **AND** `MAINTENANCE_CHILD_CREATED` = N | ask maintenance type → create Maintenance (cat 30, `DT1058_30:NEW`) → set flag Y |
+| Deal | contain New System **OR** Upgrade | nested condition `DEAL_CREATED` = N → ask Deal Type → create deal → set flag Y |
 
-**2. Condition** branching on the Call Result variable:
+Then **Change stage → Routed**.
 
-| Branch | → Stage |
-|---|---|
-| Reached | `DT1222_130:TRIAGED` |
-| No Answer | `DT1222_130:CLIENT` (Call Later) |
-| Wrong Number | `DT1222_130:INVALID` |
-| Declined | `DT1222_130:FAIL` |
-| *otherwise* (Call Later) | `DT1222_130:CLIENT` |
+Both SPA children set `PARENT_ID_1222 = {=Document:ID}`.
 
-Two deliberate simplifications: **No Answer goes to Call Later, not
-Unreachable** — one missed call should not write a customer off; escalation
-stays manual until attempt-count logic exists. And **No Action Needed is not
-reachable from this template** — "reached, wants nothing" belongs in the
-Triaged step below.
+**Deal routing** — the deal type is asked, not inferred:
 
-### Template 2 — `Legacy Deals Master Engine (When Changed)`
+| Answer | Pipeline | Entry stage |
+|---|---|---|
+| Installation Sales | 0 (default) | `NEW` |
+| Product Sales | 4 | `C4:NEW` |
+| Contract Sales | 2 | `C2:NEW` |
 
-`AUTO_EXECUTE` = on change (**2**). Branches on `STAGE_ID`.
+Inside **Call Later**: re-ask the call, write back with **merge on** so services
+accumulate, then Triaged if reached, or wait 3d → call again → Unreachable if
+still no answer.
 
-On entry to `DT1222_130:TRIAGED`, read `ufCrm100ReqServices` and spawn one
-child per selected option per the routing table, setting the parent field so
-the children trace back. Then move the record to `DT1222_130:SUCCESS`
-(Routed). If no services are selected, move to `DT1222_130:NOACTION`.
+### Three structural rules this template had to learn
 
-Useful activities, all confirmed present on this portal: `CrmCopyDynamicActivity`
-(create a child SPA record), `CrmChangeStatusActivity` (move stage),
-`SetFieldActivity`, `DelayActivity`, `Task2Activity`, `IMNotifyActivity`,
-`CrmTimelineCommentAdd`, `CrmUpdateDynamicActivity`.
+**Sibling blocks, not branches, for independent tests.** `IfElseActivity` is
+`if / else if / else` — the first matching branch runs and the rest are
+skipped. Repair and Maintenance as two branches of one condition means a
+client wanting both gets one. They must be separate Condition blocks. The
+same portal already does this in *Product Sales Other Stages*, which checks
+Battery / Inverter / Panel in three separate blocks for exactly this reason.
 
-### Open questions
+**Nest, do not mix AND with OR.** Condition rows join linearly with no
+bracketing, so `A OR B AND C` is ambiguous. The deal guard is therefore an
+outer condition (`contain New System OR Upgrade`) wrapping an inner one
+(`Deal Created = No`).
 
-- **`CATEGORY_ID: "0"`** on the four stages added over REST (1276, 1278,
-  1280, 1282), where Bitrix's own five carry `"130"`. `ENTITY_ID` is correct
-  so they appear in the right pipeline, but this may make a kanban filter or
-  automation trigger skip them. Settle it by walking test record **id 2**
-  through Triaged → Routed and watching. Fix if needed:
-  `bitrix_update_stage` with `CATEGORY_ID: 130`.
-- **Can Set Field map the task's Services Requested labels onto the
-  enumeration IDs?** The field wants 2730–2736, the task returns text. If
-  not, the staff member sets the field on the record and the task captures
-  the outcome only.
-- **Product rows are unreadable over REST** — `crm.item.productrow.list`
-  returns `ACCESS_DENIED` even for a plain deal, and even as an
-  admin-authorised app. Product access is a separate permission from CRM
-  entity access in Bitrix; check CRM → Settings → Access permissions. People
-  can still attach products through the UI — this only blocks automation and
-  reporting. Also unresolved: the correct `ownerType` code for a dynamic
-  type (`T1222` and `T100` both return `ENTITY_TYPE_NOT_SUPPORTED`).
+**Guards are required once anything can re-enter Triaged.** Each block checks
+its own `*_DONE` flag and sets it after creating. A single "children created"
+flag is not enough when Requested Services is appended to rather than
+replaced — the second call adds Maintenance to `[Repair]`, and without
+per-service flags either the new service is blocked or the old one duplicates.
+
+### Still open
+
+- **`OverdueDate` on task activities is unused portal-wide** — no working
+  example exists in any of the 102 templates, and the two `dateadd` forms that
+  do exist (`DelayActivity.TimeoutTime`, `CrmCreateToDoActivity.Deadline`) use
+  different syntax. Deliberately skipped; the portal's idiom for time pressure
+  is `DelayActivity`, already used twice in 1008.
+- **Deals cannot carry `PARENT_ID_1222`.** Parent fields belong to dynamic
+  types; every other example on the portal runs the other way
+  (`1214_PARENT_ID_2`). Deal traceability comes from the title (`NISL-LD-n`)
+  and from the SPA's **CRM bindings → "Add linked items list to details
+  form"** setting instead.
+- **`BindToCurrentElement`** is exposed on both SPA create activities and is
+  still empty — untested, possibly a cleaner link than `PARENT_ID_1222`.
+- **Product rows** remain `ACCESS_DENIED` over REST even under app auth.
+- **Purchase Date has no default** despite being required and despite the
+  1-January convention.
+
 
 ---
 
